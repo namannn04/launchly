@@ -8,7 +8,9 @@ import { SiteSidebar } from "@/components/layout/site-sidebar";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const showSidebar = pathname !== "/";
+  const showSidebar = ["/dashboard", "/projects", "/deployments", "/settings"].some(
+    (route) => pathname.startsWith(route)
+  );
 
   return (
     <div className="relative min-h-screen bg-background">

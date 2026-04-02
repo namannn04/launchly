@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, Check, Globe, Rocket, Scale, Zap } from "lucide-react";
+import { ArrowRight, Check, Clock3, Globe, Rocket, Scale, ShieldCheck, Zap } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -33,6 +33,12 @@ const features = [
     title: "Global Scaling",
     description:
       "Deliver low-latency experiences with edge-ready infrastructure.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Secure by Default",
+    description:
+      "Environment secrets, scoped access, and protected deployments out of the box.",
   },
 ];
 
@@ -66,18 +72,25 @@ const fadeUp = {
   visible: { opacity: 1, y: 0 },
 };
 
+const quickStats = [
+  { value: "99.99%", label: "Uptime" },
+  { value: "<150ms", label: "Global edge latency" },
+  { value: "10k+", label: "Deployments per day" },
+];
+
 export function LandingPage() {
   return (
-    <div className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-x-0 -top-36 h-64 bg-[radial-gradient(circle_at_top,rgba(0,0,0,0.08),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]" />
+    <div className="relative overflow-hidden pb-10">
+      <div className="pointer-events-none absolute inset-x-0 -top-40 h-72 bg-[radial-gradient(circle_at_top,rgba(0,0,0,0.12),transparent_58%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.1),transparent_58%)]" />
+      <div className="pointer-events-none absolute -right-32 top-28 hidden h-64 w-64 rounded-full bg-muted blur-3xl lg:block" />
 
-      <section className="mx-auto max-w-7xl px-4 pb-20 pt-16 sm:px-6 sm:pt-20 lg:px-8 lg:pt-28">
-        <motion.div
+      <section className="mx-auto grid max-w-7xl gap-10 px-4 pb-20 pt-16 sm:px-6 sm:pt-20 lg:grid-cols-2 lg:gap-16 lg:px-8 lg:pt-24">
+        <motion.section
           initial="hidden"
           animate="visible"
           variants={fadeUp}
           transition={{ duration: 0.45 }}
-          className="mx-auto max-w-3xl text-center"
+          className="max-w-xl"
         >
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-1 text-xs tracking-wide text-muted-foreground uppercase shadow-xs">
             <Rocket className="size-3.5" />
@@ -86,23 +99,75 @@ export function LandingPage() {
           <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
             Deploy. Preview. Ship.
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-pretty text-base text-muted-foreground sm:text-lg">
+          <p className="mt-5 max-w-2xl text-pretty text-base text-muted-foreground sm:text-lg">
             Launchly brings seamless GitHub imports, instant previews, and reliable
             production deploys together in one modern workflow.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
             <Link href="/signup" className={cn(buttonVariants({ size: "lg" }))}>
               Start Deploying
               <ArrowRight className="ml-1.5" />
             </Link>
             <Link
-              href="/import"
+              href="/login"
               className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
             >
               Import from GitHub
             </Link>
           </div>
-        </motion.div>
+          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {quickStats.map((stat) => (
+              <div key={stat.label} className="rounded-xl border border-border/70 bg-card/70 p-4">
+                <p className="text-xl font-semibold tracking-tight">{stat.value}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        </motion.section>
+
+        <motion.section
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.1 }}
+          className="relative"
+        >
+          <Card className="border-border/70 bg-card/70 shadow-lg backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-3 text-base">
+                <span>Recent Deployments</span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-600 dark:text-emerald-400">
+                  <Check className="size-3" />
+                  All systems ready
+                </span>
+              </CardTitle>
+              <CardDescription>Production and preview builds in real time.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {[
+                { name: "launchly-app", state: "Ready", time: "35s", color: "text-emerald-600" },
+                { name: "marketing-site", state: "Building", time: "12s", color: "text-amber-600" },
+                { name: "docs-portal", state: "Ready", time: "40s", color: "text-emerald-600" },
+              ].map((deploy) => (
+                <div
+                  key={deploy.name}
+                  className="flex items-center justify-between rounded-lg border border-border/60 bg-background/70 px-3 py-2"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{deploy.name}</p>
+                    <p className="text-xs text-muted-foreground">main branch</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={cn("text-xs font-medium", deploy.color)}>{deploy.state}</p>
+                    <p className="text-xs text-muted-foreground">{deploy.time}</p>
+                  </div>
+                </div>
+              ))}
+              <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Tip: use preview URLs to get feedback before every production push.
+              </div>
+            </CardContent>
+          </Card>
+        </motion.section>
       </section>
 
       <section id="features" className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -120,7 +185,7 @@ export function LandingPage() {
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {features.map((feature, index) => (
             <motion.div
               key={feature.title}
@@ -140,6 +205,23 @@ export function LandingPage() {
             </motion.div>
           ))}
         </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
+        <Card className="border-border/70 bg-card/70">
+          <CardContent className="flex flex-col items-start justify-between gap-4 py-7 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm text-muted-foreground">Ready to launch?</p>
+              <h3 className="mt-1 text-2xl font-semibold tracking-tight">
+                Ship your next release before your coffee gets cold.
+              </h3>
+            </div>
+            <Button size="lg">
+              Start Deploying
+              <Clock3 className="ml-1.5" />
+            </Button>
+          </CardContent>
+        </Card>
       </section>
 
       <section id="pricing" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
