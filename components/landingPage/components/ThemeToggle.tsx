@@ -19,7 +19,7 @@ export default function ThemeToggle() {
       type="button"
       aria-label="Toggle theme"
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="relative inline-flex h-10 w-[76px] items-center rounded-full border border-border/70 bg-muted/60 p-1 shadow-inner"
+      className="relative inline-flex h-10 w-19 items-center rounded-full border border-border/70 bg-muted/60 p-1 shadow-inner"
     >
       <span className="pointer-events-none flex w-full items-center justify-between px-1 text-muted-foreground">
         <Sun className={cn("h-4 w-4", !mounted ? "opacity-80" : isDark ? "opacity-40" : "opacity-100")} />

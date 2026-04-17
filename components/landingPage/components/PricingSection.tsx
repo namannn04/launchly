@@ -97,7 +97,7 @@ export default function PricingSection() {
               <Card
                 className={
                   plan.recommended
-                    ? "relative h-full border-primary/40 bg-gradient-to-b from-primary/10 via-card/85 to-card/85"
+                    ? "relative h-full border-primary/40 bg-linear-to-b from-primary/10 via-card/85 to-card/85"
                     : "h-full"
                 }
               >

@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserGithubConnection {
+  id                String   @id @default(cuid())
+  stackUserId       String   @unique
+  stackUser         StackUser @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
+  githubConnected   Boolean  @default(false)
+  githubAccountId   String?  @unique
+  githubUsername    String?
+  githubAvatar      String?
+  githubAccessToken String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model StackUser {
+  id                 String                @id @default(cuid())
+  stackUserId        String                @unique
+  displayName        String?
+  primaryEmail       String?
+  profileImageUrl    String?
+  githubConnection   UserGithubConnection?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+}

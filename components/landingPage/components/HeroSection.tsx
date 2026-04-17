@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, GitBranch, Globe, Zap } from "lucide-react";
+import { ArrowRight, GitBranch, Globe, Loader2, Zap } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -14,13 +15,29 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+import ConnectGitHubButton from "./ConnectGitHubButton";
+
 const highlights = [
   { icon: Zap, text: "Zero-config deployments" },
   { icon: Globe, text: "Global edge network" },
   { icon: GitBranch, text: "Git-native workflows" },
 ] as const;
 
-export default function HeroSection() {
+type HeroSectionProps = {
+  isAuthenticated: boolean;
+  githubConnected: boolean;
+  githubUsername: string | null;
+  githubAvatar: string | null;
+  isGitHubLoading: boolean;
+};
+
+export default function HeroSection({
+  isAuthenticated,
+  githubConnected,
+  githubUsername,
+  githubAvatar,
+  isGitHubLoading,
+}: HeroSectionProps) {
   return (
     <section className="relative px-4 pb-24 pt-16 sm:px-6 sm:pt-24" id="top">
       <div className="mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-2 lg:items-center">
@@ -42,21 +59,67 @@ export default function HeroSection() {
               Launchly gives your team a complete path from commit to production with instant previews,
               resilient edge delivery, and scaling that stays invisible.
             </p>
+            {isAuthenticated && !githubConnected ? (
+              <p className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
+                Connect your GitHub to start deploying repositories.
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button asChild size="lg">
-              <Link href="/handler/sign-up" className="group">
-                Start Deploying
-                <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link href="https://github.com" target="_blank" rel="noreferrer">
-                Import from GitHub
-              </Link>
-            </Button>
+            {!isAuthenticated ? (
+              <>
+                <Button asChild size="lg">
+                  <Link href="/handler/sign-up" className="group">
+                    Start Deploying
+                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link href="/handler/sign-in">Login</Link>
+                </Button>
+              </>
+            ) : githubConnected ? (
+              <>
+                <Button asChild size="lg">
+                  <Link href="/dashboard" className="group">
+                    Open Dashboard
+                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                  </Link>
+                </Button>
+                <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/75 px-2 py-1 text-xs">
+                  {githubAvatar ? (
+                    <Image
+                      src={githubAvatar}
+                      alt={githubUsername ?? "GitHub avatar"}
+                      width={24}
+                      height={24}
+                      className="h-6 w-6 rounded-full"
+                    />
+                  ) : (
+                    <span className="h-6 w-6 rounded-full bg-muted" />
+                  )}
+                  <span className="pr-1 text-muted-foreground">
+                    Connected to GitHub as {githubUsername ?? "connected user"}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <ConnectGitHubButton size="lg" />
+                <Button asChild size="lg" variant="outline" disabled={isGitHubLoading}>
+                  <Link href="/handler/sign-out">Sign out</Link>
+                </Button>
+              </>
+            )}
           </div>
+
+          {isAuthenticated && isGitHubLoading ? (
+            <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking GitHub connection...
+            </p>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-4 pt-1 text-sm text-muted-foreground">
             {highlights.map(({ icon: Icon, text }) => (
@@ -74,7 +137,7 @@ export default function HeroSection() {
           transition={{ duration: 0.68, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
         >
           <Card className="relative overflow-hidden border-border/70 bg-card/80">
-            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/15 to-transparent" />
+            <div className="absolute inset-x-0 top-0 h-24 bg-linear-to-b from-primary/15 to-transparent" />
             <CardHeader className="relative space-y-3">
               <CardDescription>Live deploy feed</CardDescription>
               <CardTitle className="text-xl">Production Push from main</CardTitle>
