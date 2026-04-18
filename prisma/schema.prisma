@@ -27,6 +27,21 @@ model StackUser {
   primaryEmail       String?
   profileImageUrl    String?
   githubConnection   UserGithubConnection?
+  deployments        Deployment[]
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
+}
+
+model Deployment {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  stackUserId   String
+  stackUser     StackUser @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
+  repoUrl       String
+  status        String
+  deploymentUrl String?
+  logs          String   @default("")
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

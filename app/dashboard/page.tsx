@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import DashboardPage, { type DashboardProject } from "@/components/dashboard/components/DashboardPage";
 
+import { listDeploymentsByStackUserId } from "@/lib/deployment/server";
 import { getGitHubConnectionStatus } from "@/lib/github-connection/server";
 import { stackServerApp } from "@/stack/server";
 
@@ -17,7 +18,19 @@ export default async function DashboardRoutePage() {
     redirect("/");
   }
 
-  const projects: DashboardProject[] = [];
+  const deployments = await listDeploymentsByStackUserId(user.id);
+
+  const projects: DashboardProject[] = deployments.map((deployment) => ({
+    id: deployment.projectId,
+    name: deployment.repoUrl.split("/").pop()?.replace(/\.git$/, "") ?? deployment.projectId,
+    status:
+      deployment.status === "success"
+        ? "Ready"
+        : deployment.status === "building" || deployment.status === "queued"
+          ? "Building"
+          : "Failed",
+    lastDeployedAt: deployment.updatedAt.toLocaleString(),
+  }));
 
   return <DashboardPage githubUsername={github.githubUsername} githubAvatar={github.githubAvatar} projects={projects} />;
 }

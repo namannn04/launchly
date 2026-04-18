@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, FolderGit2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import ThemeToggle from "@/components/landingPage/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,15 @@ import { type Repo } from "./RepoCard";
 type ImportProjectPageProps = {
   githubUsername: string | null;
   githubAvatar: string | null;
+};
+
+type DeploymentStatus = "queued" | "building" | "success" | "failed";
+
+type RepoDeploymentState = {
+  projectId: string;
+  status: DeploymentStatus;
+  deploymentUrl: string | null;
+  error: string | null;
 };
 
 function formatRelativeUpdate(isoDate: string): string {
@@ -43,6 +52,39 @@ export default function ImportProjectPage({ githubUsername, githubAvatar }: Impo
   const [providers, setProviders] = useState<GitProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deploymentStateByRepo, setDeploymentStateByRepo] = useState<Record<number, RepoDeploymentState>>({});
+
+  const sanitizeProjectId = useCallback((value: string) => {
+    return value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
+  }, []);
+
+  const refreshDeploymentStatus = useCallback(async (repoId: number, projectId: string) => {
+    const response = await fetch(`/api/deploy/${projectId}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = (await response.json()) as {
+      status: DeploymentStatus;
+      deploymentUrl: string | null;
+      error: string | null;
+      projectId: string;
+    };
+
+    setDeploymentStateByRepo((previous) => ({
+      ...previous,
+      [repoId]: {
+        projectId: payload.projectId,
+        status: payload.status,
+        deploymentUrl: payload.deploymentUrl,
+        error: payload.error,
+      },
+    }));
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -131,6 +173,90 @@ export default function ImportProjectPage({ githubUsername, githubAvatar }: Impo
     );
   }, [repos, searchQuery, selectedProvider]);
 
+  useEffect(() => {
+    const activeDeployments = Object.entries(deploymentStateByRepo).filter(([, deployment]) => {
+      return deployment.status === "queued" || deployment.status === "building";
+    });
+
+    if (activeDeployments.length === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      activeDeployments.forEach(([repoId, deployment]) => {
+        void refreshDeploymentStatus(Number(repoId), deployment.projectId);
+      });
+    }, 3000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [deploymentStateByRepo, refreshDeploymentStatus]);
+
+  const handleImport = useCallback(
+    async (repo: Repo) => {
+      const initialProjectId = sanitizeProjectId(repo.fullName.replace("/", "-"));
+
+      setDeploymentStateByRepo((previous) => ({
+        ...previous,
+        [repo.id]: {
+          projectId: initialProjectId,
+          status: "queued",
+          deploymentUrl: null,
+          error: null,
+        },
+      }));
+
+      try {
+        const response = await fetch("/api/deploy", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            repoUrl: repo.htmlUrl,
+            projectId: initialProjectId,
+          }),
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({ error: "Failed to queue deployment" }))) as { error?: string };
+          throw new Error(payload.error ?? "Failed to queue deployment");
+        }
+
+        const payload = (await response.json()) as {
+          status: DeploymentStatus;
+          projectId: string;
+        };
+
+        setDeploymentStateByRepo((previous) => ({
+          ...previous,
+          [repo.id]: {
+            projectId: payload.projectId,
+            status: payload.status,
+            deploymentUrl: null,
+            error: null,
+          },
+        }));
+
+        void refreshDeploymentStatus(repo.id, payload.projectId);
+      } catch (deployError) {
+        const message = deployError instanceof Error ? deployError.message : "Failed to queue deployment";
+
+        setDeploymentStateByRepo((previous) => ({
+          ...previous,
+          [repo.id]: {
+            projectId: initialProjectId,
+            status: "failed",
+            deploymentUrl: null,
+            error: message,
+          },
+        }));
+      }
+    },
+    [refreshDeploymentStatus, sanitizeProjectId],
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 lg:grid-cols-[260px_1fr]">
@@ -206,9 +332,8 @@ export default function ImportProjectPage({ githubUsername, githubAvatar }: Impo
               <RepoList
                 repos={filteredRepos}
                 isLoading={isLoading}
-                onImport={(repo) => {
-                  console.log("Selected repo for import:", repo);
-                }}
+                onImport={handleImport}
+                deploymentStateByRepo={deploymentStateByRepo}
               />
 
               <div className="pt-2">

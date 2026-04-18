@@ -6,21 +6,28 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "worker:deploy": "tsx backend/workers/deployWorker.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
     "@radix-ui/react-slot": "^1.2.4",
     "@stackframe/stack": "^2.8.84",
+    "bullmq": "^5.74.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "express": "^5.2.1",
     "framer-motion": "^12.38.0",
+    "ioredis": "^5.10.1",
     "lucide-react": "^1.8.0",
     "next": "16.2.4",
     "next-themes": "^0.4.6",
     "prisma": "^6.16.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
+    "simple-git": "^3.36.0",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
@@ -31,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

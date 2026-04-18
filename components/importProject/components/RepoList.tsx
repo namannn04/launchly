@@ -8,6 +8,14 @@ type RepoListProps = {
   repos: Repo[];
   isLoading: boolean;
   onImport: (repo: Repo) => void;
+  deploymentStateByRepo: Record<
+    number,
+    {
+      status: "queued" | "building" | "success" | "failed";
+      deploymentUrl: string | null;
+      error: string | null;
+    }
+  >;
 };
 
 function RepoSkeleton() {
@@ -24,7 +32,7 @@ function RepoSkeleton() {
   );
 }
 
-export default function RepoList({ repos, isLoading, onImport }: RepoListProps) {
+export default function RepoList({ repos, isLoading, onImport, deploymentStateByRepo }: RepoListProps) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -57,7 +65,14 @@ export default function RepoList({ repos, isLoading, onImport }: RepoListProps) 
       className="space-y-2"
     >
       {repos.map((repo) => (
-        <RepoCard key={repo.id} repo={repo} onImport={onImport} />
+        <RepoCard
+          key={repo.id}
+          repo={repo}
+          onImport={onImport}
+          deploymentStatus={deploymentStateByRepo[repo.id]?.status}
+          deploymentUrl={deploymentStateByRepo[repo.id]?.deploymentUrl}
+          deploymentError={deploymentStateByRepo[repo.id]?.error}
+        />
       ))}
     </motion.div>
   );
