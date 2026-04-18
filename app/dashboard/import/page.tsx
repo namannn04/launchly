@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
-import DashboardPage, { type DashboardProject } from "@/components/dashboard/components/DashboardPage";
 
+import ImportProjectPage from "@/components/importProject/components/ImportProjectPage";
 import { getGitHubConnectionStatus } from "@/lib/github-connection/server";
 import { stackServerApp } from "@/stack/server";
 
-export default async function DashboardRoutePage() {
+export default async function DashboardImportPage() {
   const user = await stackServerApp.getUser({ or: "return-null" });
 
   if (!user || user.isAnonymous) {
@@ -17,7 +17,5 @@ export default async function DashboardRoutePage() {
     redirect("/");
   }
 
-  const projects: DashboardProject[] = [];
-
-  return <DashboardPage githubUsername={github.githubUsername} githubAvatar={github.githubAvatar} projects={projects} />;
+  return <ImportProjectPage githubUsername={github.githubUsername} githubAvatar={github.githubAvatar} />;
 }
