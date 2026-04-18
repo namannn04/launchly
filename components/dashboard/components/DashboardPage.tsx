@@ -4,11 +4,14 @@ import { motion } from "framer-motion";
 import { FolderGit2, LayoutGrid, Plus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import ThemeToggle from "@/components/landingPage/components/ThemeToggle";
 
 import DashboardEmptyState from "./DashboardEmptyState";
+import DeleteProjectDialog from "./DeleteProjectDialog";
 import ProjectCard, { type DashboardProject } from "./ProjectCard";
 
 type DashboardPageProps = {
@@ -23,10 +26,41 @@ const sidebarItems = [
 ] as const;
 
 export default function DashboardPage({ githubUsername, githubAvatar, projects }: DashboardPageProps) {
+  const router = useRouter();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [activeProject, setActiveProject] = useState<DashboardProject | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleDeleteConfirm() {
+    if (!activeProject) {
+      return;
+    }
+
+    setIsDeleting(true);
+
+    try {
+      const response = await fetch(`/api/deploy/${activeProject.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Delete failed");
+      }
+
+      setDeleteDialogOpen(false);
+      setActiveProject(null);
+      router.refresh();
+    } catch {
+      window.alert("Could not delete project right now.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="border-b border-border/60 bg-card/55 px-4 py-6 backdrop-blur lg:border-b-0 lg:border-r lg:px-6">
+      <div className="mx-auto grid h-screen w-full max-w-7xl grid-cols-1 lg:grid-cols-[260px_1fr]">
+        <aside className="flex flex-col border-b border-border/60 bg-card/55 px-4 py-6 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-6">
           <Link href="/" className="inline-flex items-center gap-2 text-lg font-semibold tracking-tight">
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground">L</span>
             Launchly
@@ -56,7 +90,7 @@ export default function DashboardPage({ githubUsername, githubAvatar, projects }
           </div>
         </aside>
 
-        <section className="flex min-h-screen flex-col">
+        <section className="flex h-screen min-h-0 flex-col">
           <header className="sticky top-0 z-20 border-b border-border/60 bg-background/85 px-4 py-4 backdrop-blur sm:px-6">
             <div className="flex items-center justify-between">
               <div>
@@ -84,7 +118,7 @@ export default function DashboardPage({ githubUsername, githubAvatar, projects }
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-8 sm:px-6">
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6">
             {projects.length === 0 ? (
               <DashboardEmptyState githubUsername={githubUsername} />
             ) : (
@@ -95,12 +129,31 @@ export default function DashboardPage({ githubUsername, githubAvatar, projects }
                 className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
               >
                 {projects.map((project) => (
-                  <ProjectCard key={project.id} project={project} />
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    isDeleting={isDeleting && activeProject?.id === project.id}
+                    onDeleteRequest={(targetProject) => {
+                      setActiveProject(targetProject);
+                      setDeleteDialogOpen(true);
+                    }}
+                  />
                 ))}
               </motion.div>
             )}
           </main>
         </section>
+
+        <DeleteProjectDialog
+          isOpen={deleteDialogOpen && Boolean(activeProject)}
+          projectName={activeProject?.name ?? ""}
+          isDeleting={isDeleting}
+          onCancel={() => {
+            setDeleteDialogOpen(false);
+            setActiveProject(null);
+          }}
+          onConfirm={handleDeleteConfirm}
+        />
       </div>
     </div>
   );

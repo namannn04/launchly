@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker:deploy": "tsx backend/workers/deployWorker.ts",
+    "worker:deploy": "node --env-file=.env.local ./node_modules/tsx/dist/cli.mjs backend/workers/deployWorker.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
