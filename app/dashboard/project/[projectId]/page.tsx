@@ -102,13 +102,24 @@ export default async function ProjectDashboardPage({
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-                    <div className="overflow-hidden rounded-xl border border-border/70 bg-black/70">
-                      <iframe
-                        title={`${projectName} preview`}
-                        src={deploymentPath}
-                        className="h-77.5 w-full bg-white"
-                        loading="lazy"
-                      />
+                    <div className="overflow-hidden rounded-2xl border border-border/70 bg-black shadow-[0_16px_45px_rgba(0,0,0,0.35)]">
+                      <div className="flex items-center gap-2 border-b border-white/10 bg-zinc-950 px-3 py-2.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-red-400/80" />
+                        <span className="h-2.5 w-2.5 rounded-full bg-amber-300/80" />
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" />
+                        <div className="ml-2 flex-1 truncate rounded-md bg-white/5 px-3 py-1 text-xs text-zinc-300">
+                          {permanentUrl}
+                        </div>
+                      </div>
+
+                      <div className="aspect-16/10 bg-white">
+                        <iframe
+                          title={`${projectName} preview`}
+                          src={deploymentPath}
+                          className="h-full w-full bg-white"
+                          loading="lazy"
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-3 text-sm">
