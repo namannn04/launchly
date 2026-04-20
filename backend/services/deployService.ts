@@ -6,6 +6,7 @@ import type { DeploymentRuntime } from "@prisma/client";
 import simpleGit from "simple-git";
 
 import { prisma } from "../../lib/prisma";
+import { getProjectDeploymentUrl } from "../../lib/deployment/url";
 import { decryptSecret } from "../../lib/security/encryption";
 import { resolveProjectEnvironmentVariables } from "../../lib/security/projectEnv";
 import { startRuntime, stopRuntimeIfRunning } from "./runtimeManager";
@@ -250,6 +251,8 @@ export async function deployRepository(job: DeployJobData) {
   const outputDir = path.join(deploymentDir, "output");
 
   try {
+    await stopRuntimeIfRunning(projectId);
+
     await rm(deploymentDir, { recursive: true, force: true });
     await mkdir(sourceDir, { recursive: true });
     await mkdir(outputDir, { recursive: true });
@@ -362,8 +365,7 @@ export async function deployRepository(job: DeployJobData) {
       await appendDeploymentLog(projectId, "Skipping static artifact checks for backend runtime deployment");
     }
 
-    const appPort = process.env.APP_URL_PORT ?? "3000";
-    let deploymentUrl = `http://localhost:${appPort}/project/${projectId}/`;
+    const deploymentUrl = getProjectDeploymentUrl(projectId);
     let runtimePort: number | null = null;
     let runtimePid: number | null = null;
     let runtimeStatus: string | null = null;
@@ -377,7 +379,6 @@ export async function deployRepository(job: DeployJobData) {
       });
 
       if (startedRuntime) {
-        deploymentUrl = startedRuntime.runtimeUrl;
         runtimePort = startedRuntime.port;
         runtimePid = startedRuntime.pid;
         runtimeStatus = startedRuntime.healthy ? "healthy" : "starting";

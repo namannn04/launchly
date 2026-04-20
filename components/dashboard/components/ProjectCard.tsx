@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getProjectDeploymentUrl } from "@/lib/deployment/url";
 
 type ProjectStatus = "Ready" | "Building" | "Failed";
 
@@ -123,7 +124,7 @@ export default function ProjectCard({ project, onDeleteRequest, isDeleting = fal
         <CardContent className="space-y-3">
           <div className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-xs text-muted-foreground">
             <LinkIcon className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{project.deploymentUrl ?? `http://localhost:3000/project/${project.id}/`}</span>
+            <span className="truncate">{project.deploymentUrl ?? getProjectDeploymentUrl(project.id)}</span>
           </div>
 
           {project.error ? <p className="text-xs text-red-500">{project.error}</p> : null}

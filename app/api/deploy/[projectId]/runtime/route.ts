@@ -4,6 +4,7 @@ import type { DeploymentEnvironment } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
+import { getProjectDeploymentUrl } from "@/lib/deployment/url";
 import { writeAuditLog } from "@/lib/security/audit";
 import { resolveProjectEnvironmentVariables } from "@/lib/security/projectEnv";
 import { enforceRateLimit } from "@/lib/security/rateLimit";
@@ -114,7 +115,7 @@ export async function POST(
   return NextResponse.json({
     success: true,
     runtime: deployment.runtime,
-    runtimeUrl: started?.runtimeUrl ?? null,
+    runtimeUrl: getProjectDeploymentUrl(deployment.projectId),
     runtimeStatus: started?.healthy ? "healthy" : "starting",
     runtimePort: started?.port ?? null,
   });

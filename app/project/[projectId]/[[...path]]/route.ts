@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { extractProjectIdFromHost } from "@/lib/deployment/url";
 import { prisma } from "@/lib/prisma";
 
 const mimeTypes: Record<string, string> = {
@@ -58,11 +59,25 @@ function rewriteRuntimeHtmlForProject(html: string, projectId: string) {
     .replace(/url\(\/_next\//g, `url(${projectPrefix}/_next/`);
 }
 
+function shouldProxyRuntimeFirst(runtime: string | null | undefined, relativePath: string) {
+  if (runtime === "nextjs") {
+    return true;
+  }
+
+  if (runtime !== "node") {
+    return false;
+  }
+
+  const firstSegment = relativePath.split("/")[0]?.toLowerCase() ?? "";
+  return ["api", "socket.io", "graphql", "trpc"].includes(firstSegment);
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ projectId: string; path?: string[] }> },
 ) {
   const { projectId, path: pathSegments } = await params;
+  const isSubdomainRequest = extractProjectIdFromHost(request.headers.get("host")) === projectId;
 
   const outputRoot = path.join(process.cwd(), "backend", "deployments", projectId, "output");
 
@@ -84,7 +99,10 @@ export async function GET(
     },
   });
 
-  if ((deployment?.runtime === "nextjs" || deployment?.runtime === "node") && deployment.runtimePort) {
+  const hasRuntime = (deployment?.runtime === "nextjs" || deployment?.runtime === "node") && Boolean(deployment?.runtimePort);
+  const proxyRuntimeFirst = shouldProxyRuntimeFirst(deployment?.runtime, relativePath);
+
+  if (hasRuntime && proxyRuntimeFirst) {
     const runtimeUrl = new URL(`http://127.0.0.1:${deployment.runtimePort}`);
     runtimeUrl.pathname = relativePath ? `/${relativePath}` : "/";
     runtimeUrl.search = new URL(request.url).search;
@@ -117,22 +135,27 @@ export async function GET(
 
       const headers = new Headers(proxied.headers);
       const contentType = proxied.headers.get("content-type") ?? "";
-      headers.delete("content-encoding");
-      headers.delete("content-length");
-      headers.delete("transfer-encoding");
-      headers.set("cache-control", "no-cache");
 
       if (contentType.includes("text/html")) {
         const html = await proxied.text();
-        const rewrittenHtml = rewriteRuntimeHtmlForProject(html, projectId);
+        const responseHtml = isSubdomainRequest ? html : rewriteRuntimeHtmlForProject(html, projectId);
 
+        headers.delete("content-encoding");
+        headers.delete("content-length");
+        headers.delete("transfer-encoding");
+        headers.set("cache-control", "no-cache");
         headers.set("content-type", "text/html; charset=utf-8");
 
-        return new NextResponse(rewrittenHtml, {
+        return new NextResponse(responseHtml, {
           status: proxied.status,
           headers,
         });
       }
+
+      headers.delete("content-encoding");
+      headers.delete("content-length");
+      headers.delete("transfer-encoding");
+      headers.set("cache-control", "no-cache");
 
       return new NextResponse(proxied.body, {
         status: proxied.status,
@@ -148,7 +171,7 @@ export async function GET(
     const contentType = contentTypeFor(requestedPath);
 
     if (contentType.startsWith("text/html")) {
-      const html = injectBaseHref(fileBuffer.toString("utf8"), projectId);
+      const html = isSubdomainRequest ? fileBuffer.toString("utf8") : injectBaseHref(fileBuffer.toString("utf8"), projectId);
 
       return new NextResponse(html, {
         headers: {
@@ -169,7 +192,9 @@ export async function GET(
 
     try {
       const fallbackBuffer = await readFile(fallbackPath);
-      const html = injectBaseHref(fallbackBuffer.toString("utf8"), projectId);
+      const html = isSubdomainRequest
+        ? fallbackBuffer.toString("utf8")
+        : injectBaseHref(fallbackBuffer.toString("utf8"), projectId);
 
       return new NextResponse(html, {
         headers: {
@@ -178,6 +203,70 @@ export async function GET(
         },
       });
     } catch {
+      if (hasRuntime && deployment?.runtimePort) {
+        const runtimeUrl = new URL(`http://127.0.0.1:${deployment.runtimePort}`);
+        runtimeUrl.pathname = relativePath ? `/${relativePath}` : "/";
+        runtimeUrl.search = new URL(request.url).search;
+
+        try {
+          const forwardedHeaders = new Headers();
+          const headerAllowList = [
+            "accept",
+            "accept-language",
+            "cookie",
+            "user-agent",
+            "x-forwarded-for",
+            "x-forwarded-host",
+            "x-forwarded-proto",
+          ];
+
+          for (const headerName of headerAllowList) {
+            const value = request.headers.get(headerName);
+
+            if (value) {
+              forwardedHeaders.set(headerName, value);
+            }
+          }
+
+          const proxied = await fetch(runtimeUrl, {
+            method: "GET",
+            cache: "no-store",
+            headers: forwardedHeaders,
+          });
+
+          const headers = new Headers(proxied.headers);
+          const contentType = proxied.headers.get("content-type") ?? "";
+
+          if (contentType.includes("text/html")) {
+            const html = await proxied.text();
+            const responseHtml = isSubdomainRequest ? html : rewriteRuntimeHtmlForProject(html, projectId);
+
+            headers.delete("content-encoding");
+            headers.delete("content-length");
+            headers.delete("transfer-encoding");
+            headers.set("cache-control", "no-cache");
+            headers.set("content-type", "text/html; charset=utf-8");
+
+            return new NextResponse(responseHtml, {
+              status: proxied.status,
+              headers,
+            });
+          }
+
+          headers.delete("content-encoding");
+          headers.delete("content-length");
+          headers.delete("transfer-encoding");
+          headers.set("cache-control", "no-cache");
+
+          return new NextResponse(proxied.body, {
+            status: proxied.status,
+            headers,
+          });
+        } catch {
+          return NextResponse.json({ error: "Backend runtime unavailable" }, { status: 502 });
+        }
+      }
+
       return NextResponse.json({ error: "Deployed project not found" }, { status: 404 });
     }
   }

@@ -1,7 +1,39 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { extractProjectIdFromHost } from "@/lib/deployment/url";
+
+function rewriteSubdomainRequest(request: NextRequest) {
+  const projectId = extractProjectIdFromHost(request.headers.get("host"));
+
+  if (!projectId) {
+    return null;
+  }
+
+  const pathname = request.nextUrl.pathname;
+  const projectRoot = `/project/${projectId}`;
+
+  if (pathname === projectRoot || pathname.startsWith(`${projectRoot}/`)) {
+    return null;
+  }
+
+  const rewrittenUrl = request.nextUrl.clone();
+  rewrittenUrl.pathname = pathname === "/" ? projectRoot : `${projectRoot}${pathname}`;
+
+  return NextResponse.rewrite(rewrittenUrl);
+}
+
 export async function proxy(request: NextRequest) {
+  const rewritten = rewriteSubdomainRequest(request);
+
+  if (rewritten) {
+    return rewritten;
+  }
+
+  if (!request.nextUrl.pathname.startsWith("/dashboard")) {
+    return NextResponse.next();
+  }
+
   try {
     const statusUrl = new URL("/api/github/status", request.url);
     const statusResponse = await fetch(statusUrl, {
@@ -32,5 +64,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/:path*"],
 };

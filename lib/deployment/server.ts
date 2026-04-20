@@ -1,9 +1,10 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { getProjectDeploymentUrl } from "@/lib/deployment/url";
 
 export async function listDeploymentsByStackUserId(stackUserId: string) {
-  return prisma.deployment.findMany({
+  const deployments = await prisma.deployment.findMany({
     where: { stackUserId },
     orderBy: { updatedAt: "desc" },
     select: {
@@ -19,10 +20,15 @@ export async function listDeploymentsByStackUserId(stackUserId: string) {
       updatedAt: true,
     },
   });
+
+  return deployments.map((deployment) => ({
+    ...deployment,
+    deploymentUrl: getProjectDeploymentUrl(deployment.projectId),
+  }));
 }
 
 export async function getDeploymentByProjectIdForStackUser(stackUserId: string, projectId: string) {
-  return prisma.deployment.findFirst({
+  const deployment = await prisma.deployment.findFirst({
     where: {
       stackUserId,
       projectId,
@@ -42,4 +48,13 @@ export async function getDeploymentByProjectIdForStackUser(stackUserId: string, 
       updatedAt: true,
     },
   });
+
+  if (!deployment) {
+    return null;
+  }
+
+  return {
+    ...deployment,
+    deploymentUrl: getProjectDeploymentUrl(deployment.projectId),
+  };
 }

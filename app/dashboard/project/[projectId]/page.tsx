@@ -6,6 +6,7 @@ import ProjectEnvironmentPanel from "@/components/dashboard/components/ProjectEn
 import ProjectDashboardActions from "@/components/dashboard/components/ProjectDashboardActions";
 import ThemeToggle from "@/components/landingPage/components/ThemeToggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getProjectDeploymentPath, getProjectDeploymentUrl } from "@/lib/deployment/url";
 import { getDeploymentByProjectIdForStackUser, listDeploymentsByStackUserId } from "@/lib/deployment/server";
 import { getGitHubConnectionStatus } from "@/lib/github-connection/server";
 import { stackServerApp } from "@/stack/server";
@@ -41,8 +42,8 @@ export default async function ProjectDashboardPage({
   }
 
   const projectName = deployment.repoUrl.split("/").pop()?.replace(/\.git$/, "") ?? deployment.projectId;
-  const deploymentPath = `/project/${deployment.projectId}/`;
-  const permanentUrl = deployment.deploymentUrl ?? deploymentPath;
+  const deploymentPath = getProjectDeploymentPath(deployment.projectId);
+  const permanentUrl = getProjectDeploymentUrl(deployment.projectId);
   const runtimeStatusTone = deployment.runtimeStatus === "healthy"
     ? "text-emerald-500"
     : deployment.runtimeStatus === "starting"
@@ -94,7 +95,7 @@ export default async function ProjectDashboardPage({
                   projectId={deployment.projectId}
                   projectName={projectName}
                   repoUrl={deployment.repoUrl}
-                  deploymentUrl={deploymentPath}
+                  deploymentUrl={permanentUrl}
                   runtime={deployment.runtime}
                   environment={deployment.environment}
                 />
@@ -133,7 +134,7 @@ export default async function ProjectDashboardPage({
                     <div className="space-y-3 text-sm">
                       <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Deployment</p>
                       <a
-                        href={deploymentPath}
+                        href={permanentUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="break-all text-base font-semibold underline-offset-4 hover:underline"

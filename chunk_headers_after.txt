@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+vary: Accept-Encoding
+accept-ranges: bytes
+cache-control: no-cache
+connection: keep-alive
+content-type: application/javascript; charset=UTF-8
+date: Mon, 20 Apr 2026 16:14:57 GMT
+etag: W/"754b-19daba290d6"
+keep-alive: timeout=5
+last-modified: Mon, 20 Apr 2026 16:04:11 GMT
+Transfer-Encoding: chunked
+

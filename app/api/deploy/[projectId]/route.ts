@@ -4,6 +4,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { stopRuntimeIfRunning } from "@/backend/services/runtimeManager";
+import { getProjectDeploymentUrl } from "@/lib/deployment/url";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/security/audit";
 import { enforceRateLimit } from "@/lib/security/rateLimit";
@@ -45,7 +46,10 @@ export async function GET(
     return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
   }
 
-  return NextResponse.json(deployment);
+  return NextResponse.json({
+    ...deployment,
+    deploymentUrl: getProjectDeploymentUrl(deployment.projectId),
+  });
 }
 
 export async function DELETE(

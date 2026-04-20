@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import DashboardPage, { type DashboardProject } from "@/components/dashboard/components/DashboardPage";
 
+import { getProjectDeploymentUrl } from "@/lib/deployment/url";
 import { listDeploymentsByStackUserId } from "@/lib/deployment/server";
 import { getGitHubConnectionStatus } from "@/lib/github-connection/server";
 import { stackServerApp } from "@/stack/server";
@@ -26,7 +27,7 @@ export default async function DashboardRoutePage() {
     id: deployment.projectId,
     name: deployment.repoUrl.split("/").pop()?.replace(/\.git$/, "") ?? deployment.projectId,
     repoUrl: deployment.repoUrl,
-    deploymentUrl: deployment.deploymentUrl,
+    deploymentUrl: getProjectDeploymentUrl(deployment.projectId),
     error: deployment.error,
     status:
       deployment.status === "success"

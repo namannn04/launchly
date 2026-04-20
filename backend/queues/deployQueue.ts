@@ -17,8 +17,8 @@ function createDeployQueue() {
   return new Queue<DeployJobData>("deploy-queue", {
     connection: createRedisConnection(),
     defaultJobOptions: {
-      removeOnComplete: false,
-      removeOnFail: false,
+      removeOnComplete: true,
+      removeOnFail: 20,
       attempts: 1,
     },
   });
@@ -28,7 +28,9 @@ export async function addDeployJob(data: DeployJobData) {
   const queue = createDeployQueue();
 
   try {
-    await queue.add(`deploy:${data.projectId}`, data);
+    await queue.add(`deploy:${data.projectId}`, data, {
+      jobId: `deploy:${data.projectId}`,
+    });
   } finally {
     await queue.close();
   }
