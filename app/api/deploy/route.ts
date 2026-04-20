@@ -1,14 +1,35 @@
 import { NextResponse } from "next/server";
+import type { DeploymentEnvironment } from "@prisma/client";
 
 import { addDeployJob } from "@/backend/queues/deployQueue";
 import { listGitHubRepositories, syncStackUserIdentity } from "@/lib/github-connection/server";
 import { prisma } from "@/lib/prisma";
+import { writeAuditLog } from "@/lib/security/audit";
+import { upsertProjectEnvironmentVariables } from "@/lib/security/projectEnv";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { stackServerApp } from "@/stack/server";
 
 type DeployRequestBody = {
   repoUrl?: string;
   projectId?: string;
+  environment?: string;
+  envVariables?: Array<{
+    key?: string;
+    value?: string;
+  }>;
 };
+
+const allowedEnvironments: DeploymentEnvironment[] = ["development", "preview", "production"];
+
+function parseEnvironment(value?: string): DeploymentEnvironment {
+  const normalized = value?.toLowerCase() as DeploymentEnvironment | undefined;
+
+  if (normalized && allowedEnvironments.includes(normalized)) {
+    return normalized;
+  }
+
+  return "production";
+}
 
 function sanitizeProjectId(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
@@ -19,6 +40,24 @@ export async function POST(request: Request) {
 
   if (!user || user.isAnonymous) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rate = await enforceRateLimit({
+    key: `deploy:${user.id}`,
+    limit: 15,
+    windowSeconds: 60,
+  });
+
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Too many deploy requests. Please retry shortly." },
+      {
+        status: 429,
+        headers: {
+          "retry-after": String(rate.retryAfterSeconds),
+        },
+      },
+    );
   }
 
   const body = (await request.json()) as DeployRequestBody;
@@ -52,6 +91,7 @@ export async function POST(request: Request) {
   }
 
   const projectId = sanitizeProjectId(body.projectId);
+  const environment = parseEnvironment(body.environment);
 
   if (!projectId) {
     return NextResponse.json({ error: "Invalid projectId" }, { status: 400 });
@@ -64,12 +104,31 @@ export async function POST(request: Request) {
     profileImageUrl: user.profileImageUrl,
   });
 
+  const envVariables = (body.envVariables ?? []).map((entry) => ({
+    key: entry.key ?? "",
+    value: entry.value ?? "",
+  }));
+
+  try {
+    await upsertProjectEnvironmentVariables({
+      stackUserId: user.id,
+      projectId,
+      environment,
+      entries: envVariables,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid environment variables";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
   await prisma.deployment.upsert({
     where: { projectId },
     update: {
       stackUserId: user.id,
       repoUrl: repoUrlInput,
       status: "queued",
+      environment,
+      runtime: "unknown",
       deploymentUrl: null,
       logs: "",
       error: null,
@@ -79,6 +138,7 @@ export async function POST(request: Request) {
       stackUserId: user.id,
       repoUrl: repoUrlInput,
       status: "queued",
+      environment,
       logs: "",
     },
   });
@@ -87,10 +147,24 @@ export async function POST(request: Request) {
     projectId,
     repoUrl: repoUrlInput,
     stackUserId: user.id,
+    environment,
+  });
+
+  await writeAuditLog({
+    stackUserId: user.id,
+    action: "deploy.queued",
+    resourceType: "deployment",
+    resourceId: projectId,
+    metadata: {
+      environment,
+      repoUrl: repoUrlInput,
+      envCount: envVariables.length,
+    },
   });
 
   return NextResponse.json({
     status: "queued",
     projectId,
+    environment,
   });
 }

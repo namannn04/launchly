@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { syncStackUserIdentity } from "@/lib/github-connection/server";
 import { prisma } from "@/lib/prisma";
+import { encryptSecret } from "@/lib/security/encryption";
 import { stackServerApp } from "@/stack/server";
 
 type GitHubTokenResponse = {
@@ -110,6 +111,13 @@ export async function GET(request: Request) {
   }
 
   const profile = (await profileResponse.json()) as GitHubUserResponse;
+  let encryptedToken: ReturnType<typeof encryptSecret>;
+
+  try {
+    encryptedToken = encryptSecret(accessToken, `github:${user.id}`);
+  } catch {
+    return NextResponse.redirect(new URL("/?github=missing-encryption-key", request.url));
+  }
 
   await prisma.userGithubConnection.upsert({
     where: { stackUserId: user.id },
@@ -118,7 +126,10 @@ export async function GET(request: Request) {
       githubAccountId: String(profile.id),
       githubUsername: profile.login,
       githubAvatar: profile.avatar_url,
-      githubAccessToken: accessToken,
+      githubAccessToken: encryptedToken.value,
+      githubAccessTokenIv: encryptedToken.iv,
+      githubAccessTokenTag: encryptedToken.tag,
+      githubAccessTokenKeyVer: encryptedToken.keyVersion,
     },
     create: {
       stackUserId: user.id,
@@ -126,7 +137,10 @@ export async function GET(request: Request) {
       githubAccountId: String(profile.id),
       githubUsername: profile.login,
       githubAvatar: profile.avatar_url,
-      githubAccessToken: accessToken,
+      githubAccessToken: encryptedToken.value,
+      githubAccessTokenIv: encryptedToken.iv,
+      githubAccessTokenTag: encryptedToken.tag,
+      githubAccessTokenKeyVer: encryptedToken.keyVersion,
     },
   });
 

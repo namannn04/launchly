@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import ProjectEnvironmentPanel from "@/components/dashboard/components/ProjectEnvironmentPanel";
 import ProjectDashboardActions from "@/components/dashboard/components/ProjectDashboardActions";
 import ThemeToggle from "@/components/landingPage/components/ThemeToggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +43,11 @@ export default async function ProjectDashboardPage({
   const projectName = deployment.repoUrl.split("/").pop()?.replace(/\.git$/, "") ?? deployment.projectId;
   const deploymentPath = `/project/${deployment.projectId}/`;
   const permanentUrl = deployment.deploymentUrl ?? deploymentPath;
+  const runtimeStatusTone = deployment.runtimeStatus === "healthy"
+    ? "text-emerald-500"
+    : deployment.runtimeStatus === "starting"
+      ? "text-amber-500"
+      : "text-muted-foreground";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -89,6 +95,8 @@ export default async function ProjectDashboardPage({
                   projectName={projectName}
                   repoUrl={deployment.repoUrl}
                   deploymentUrl={deploymentPath}
+                  runtime={deployment.runtime}
+                  environment={deployment.environment}
                 />
               </div>
             </div>
@@ -144,6 +152,28 @@ export default async function ProjectDashboardPage({
                         </div>
                       </div>
 
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Runtime</p>
+                          <p className="mt-1 font-medium">{deployment.runtime}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Runtime Health</p>
+                          <p className={`mt-1 font-medium ${runtimeStatusTone}`}>{deployment.runtimeStatus ?? "not running"}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Environment</p>
+                          <p className="mt-1 font-medium capitalize">{deployment.environment}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Runtime Port</p>
+                          <p className="mt-1 font-medium">{deployment.runtimePort ?? "-"}</p>
+                        </div>
+                      </div>
+
                       <div className="pt-2">
                         <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Source</p>
                         <a
@@ -170,6 +200,18 @@ export default async function ProjectDashboardPage({
                   <pre className="max-h-105 overflow-auto whitespace-pre-wrap rounded-lg border border-border/70 bg-background/60 p-3 text-xs leading-relaxed">
                     {deployment.logs || "No logs yet."}
                   </pre>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Secrets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ProjectEnvironmentPanel
+                    projectId={deployment.projectId}
+                    environment={deployment.environment}
+                  />
                 </CardContent>
               </Card>
             </div>

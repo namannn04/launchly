@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, FileText, GitBranch, Trash2 } from "lucide-react";
+import { ExternalLink, FileText, GitBranch, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -13,11 +13,21 @@ type ProjectDashboardActionsProps = {
   projectName: string;
   repoUrl: string;
   deploymentUrl: string;
+  runtime: "static" | "nextjs" | "node" | "unknown";
+  environment: "development" | "preview" | "production";
 };
 
-export default function ProjectDashboardActions({ projectId, projectName, repoUrl, deploymentUrl }: ProjectDashboardActionsProps) {
+export default function ProjectDashboardActions({
+  projectId,
+  projectName,
+  repoUrl,
+  deploymentUrl,
+  runtime,
+  environment,
+}: ProjectDashboardActionsProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   async function handleDelete() {
@@ -39,6 +49,34 @@ export default function ProjectDashboardActions({ projectId, projectName, repoUr
       window.alert("Could not delete project right now.");
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function handleRestartRuntime() {
+    setIsRestarting(true);
+
+    try {
+      const response = await fetch(`/api/deploy/${projectId}/runtime`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "restart",
+          environment,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: "Restart failed" }))) as { error?: string };
+        throw new Error(payload.error ?? "Restart failed");
+      }
+
+      router.refresh();
+    } catch {
+      window.alert("Could not restart runtime right now.");
+    } finally {
+      setIsRestarting(false);
     }
   }
 
@@ -64,6 +102,13 @@ export default function ProjectDashboardActions({ projectId, projectName, repoUr
           <ExternalLink className="h-4 w-4" />
         </a>
       </Button>
+
+      {(runtime === "nextjs" || runtime === "node") ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => void handleRestartRuntime()} disabled={isRestarting}>
+          {isRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+          Restart Runtime
+        </Button>
+      ) : null}
 
       <Button
         variant="ghost"

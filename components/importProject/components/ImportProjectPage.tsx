@@ -147,8 +147,8 @@ export default function ImportProjectPage({ githubUsername, githubAvatar }: Impo
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="border-b border-border/60 bg-card/55 px-4 py-6 backdrop-blur lg:border-b-0 lg:border-r lg:px-6">
+      <div className="mx-auto grid h-screen w-full max-w-7xl grid-cols-1 lg:grid-cols-[260px_1fr]">
+        <aside className="border-b border-border/60 bg-card/55 px-4 py-6 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:px-6 lg:overflow-hidden">
           <Link href="/" className="inline-flex items-center gap-2 text-lg font-semibold tracking-tight">
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground">L</span>
             Launchly
@@ -166,7 +166,7 @@ export default function ImportProjectPage({ githubUsername, githubAvatar }: Impo
           </nav>
         </aside>
 
-        <section className="flex min-h-screen flex-col">
+        <section className="flex h-screen min-h-0 flex-col">
           <header className="sticky top-0 z-20 border-b border-border/60 bg-background/85 px-4 py-4 backdrop-blur sm:px-6">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -195,7 +195,7 @@ export default function ImportProjectPage({ githubUsername, githubAvatar }: Impo
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-8 sm:px-6">
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}

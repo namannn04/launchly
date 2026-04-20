@@ -25,6 +25,10 @@ type DeployStatus = "idle" | "queued" | "building" | "success" | "failed";
 type DeploymentPayload = {
   projectId: string;
   status: "queued" | "building" | "success" | "failed";
+  environment: "development" | "preview" | "production";
+  runtime: "static" | "nextjs" | "node" | "unknown";
+  runtimePort: number | null;
+  runtimeStatus: string | null;
   deploymentUrl: string | null;
   logs: string;
   error: string | null;
@@ -36,6 +40,101 @@ type DetectedPreset = {
   label: string;
   confidence: "high" | "medium" | "low";
 };
+
+type DeployEnvironment = "development" | "preview" | "production";
+
+type EnvVariableInput = {
+  id: string;
+  key: string;
+  value: string;
+  revealValue?: boolean;
+};
+
+function parseEnvPasteInput(input: string) {
+  const parsed: Array<{ key: string; value: string }> = [];
+  const keyPattern = /^[A-Za-z_][A-Za-z0-9_./:-]*$/;
+
+  const lines = input.split(/\r?\n/);
+
+  function isQuotedValueClosed(value: string, quote: '"' | "'") {
+    if (!value.startsWith(quote)) {
+      return true;
+    }
+
+    let escaped = false;
+
+    for (let index = 1; index < value.length; index += 1) {
+      const char = value[index];
+
+      if (char === "\\" && !escaped) {
+        escaped = true;
+        continue;
+      }
+
+      if (char === quote && !escaped && index === value.length - 1) {
+        return true;
+      }
+
+      escaped = false;
+    }
+
+    return false;
+  }
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex].trim();
+
+    if (line.length === 0 || line.startsWith("#")) {
+      continue;
+    }
+
+    const normalizedLine = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const separatorIndex = normalizedLine.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const rawKey = normalizedLine.slice(0, separatorIndex).trim().replace(/\s+/g, "");
+
+    if (!rawKey) {
+      continue;
+    }
+
+    const normalizedKey = rawKey
+      .replace(/^['\"]+/, "")
+      .replace(/['\"]+$/, "");
+
+    if (!keyPattern.test(normalizedKey)) {
+      continue;
+    }
+
+    let rawValue = normalizedLine.slice(separatorIndex + 1).trim();
+
+    if (rawValue.startsWith("\"") || rawValue.startsWith("'")) {
+      const quote = rawValue[0] as '"' | "'";
+
+      while (!isQuotedValueClosed(rawValue, quote) && lineIndex + 1 < lines.length) {
+        lineIndex += 1;
+        rawValue = `${rawValue}\n${lines[lineIndex]}`;
+      }
+    }
+
+    if (
+      (rawValue.startsWith('"') && rawValue.endsWith('"'))
+      || (rawValue.startsWith("'") && rawValue.endsWith("'"))
+    ) {
+      rawValue = rawValue.slice(1, -1);
+    }
+
+    parsed.push({
+      key: normalizedKey,
+      value: rawValue,
+    });
+  }
+
+  return parsed;
+}
 
 function sanitizeProjectId(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
@@ -74,12 +173,18 @@ export default function NewProjectFlowPage({
   const [teamName] = useState(`${owner || "Personal"} Team`);
   const [rootDirectory] = useState("./");
   const [status, setStatus] = useState<DeployStatus>("idle");
+  const [runtime, setRuntime] = useState<DeploymentPayload["runtime"]>("unknown");
+  const [runtimePort, setRuntimePort] = useState<number | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [deploymentUrl, setDeploymentUrl] = useState<string | null>(null);
   const [logs, setLogs] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isDeploying, setIsDeploying] = useState(false);
   const [isDetectingPreset, setIsDetectingPreset] = useState(true);
+  const [deployEnvironment, setDeployEnvironment] = useState<DeployEnvironment>("production");
+  const [envVariables, setEnvVariables] = useState<EnvVariableInput[]>([]);
+  const [envBulkInput, setEnvBulkInput] = useState("");
   const [preset, setPreset] = useState<DetectedPreset>({
     id: "unknown",
     label: "Automatic",
@@ -153,6 +258,9 @@ export default function NewProjectFlowPage({
       const payload = (await response.json()) as DeploymentPayload;
 
       setStatus(payload.status);
+      setRuntime(payload.runtime);
+      setRuntimePort(payload.runtimePort);
+      setRuntimeStatus(payload.runtimeStatus);
       setDeploymentUrl(payload.deploymentUrl);
       setLogs(payload.logs);
       setError(payload.error);
@@ -193,6 +301,8 @@ export default function NewProjectFlowPage({
         body: JSON.stringify({
           repoUrl,
           projectId: targetProjectId,
+          environment: deployEnvironment,
+          envVariables: envVariables.filter((entry) => entry.key.trim().length > 0),
         }),
       });
 
@@ -212,6 +322,73 @@ export default function NewProjectFlowPage({
     } finally {
       setIsDeploying(false);
     }
+  }
+
+  function addEnvVariable() {
+    setEnvVariables((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        key: "",
+        value: "",
+        revealValue: false,
+      },
+    ]);
+  }
+
+  function updateEnvVariable(id: string, field: "key" | "value", value: string) {
+    setEnvVariables((current) => current.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry)));
+  }
+
+  function removeEnvVariable(id: string) {
+    setEnvVariables((current) => current.filter((entry) => entry.id !== id));
+  }
+
+  function toggleEnvValueVisibility(id: string) {
+    setEnvVariables((current) => current.map((entry) => (
+      entry.id === id
+        ? { ...entry, revealValue: !entry.revealValue }
+        : entry
+    )));
+  }
+
+  function importEnvVariablesFromPaste() {
+    const parsed = parseEnvPasteInput(envBulkInput);
+
+    if (parsed.length === 0) {
+      return;
+    }
+
+    setEnvVariables((current) => {
+      const byKey = new Map<string, EnvVariableInput>();
+
+      for (const entry of current) {
+        byKey.set(entry.key.trim(), entry);
+      }
+
+      for (const entry of parsed) {
+        const existing = byKey.get(entry.key);
+
+        if (existing) {
+          byKey.set(entry.key, {
+            ...existing,
+            value: entry.value,
+            revealValue: existing.revealValue ?? false,
+          });
+        } else {
+          byKey.set(entry.key, {
+            id: crypto.randomUUID(),
+            key: entry.key,
+            value: entry.value,
+            revealValue: false,
+          });
+        }
+      }
+
+      return [...byKey.values()];
+    });
+
+    setEnvBulkInput("");
   }
 
   return (
@@ -301,6 +478,86 @@ export default function NewProjectFlowPage({
                 <div className="h-11 rounded-xl border border-border/80 bg-background/70 px-3 text-sm leading-10.5">{rootDirectory}</div>
               </div>
 
+              <div>
+                <p className="mb-1.5 text-sm text-muted-foreground">Deployment Environment</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["development", "preview", "production"] as DeployEnvironment[]).map((envScope) => (
+                    <button
+                      key={envScope}
+                      type="button"
+                      onClick={() => setDeployEnvironment(envScope)}
+                      className={
+                        deployEnvironment === envScope
+                          ? "h-10 rounded-lg border border-primary bg-primary/10 text-xs font-medium capitalize text-primary"
+                          : "h-10 rounded-lg border border-border/80 bg-background/70 text-xs font-medium capitalize text-muted-foreground"
+                      }
+                    >
+                      {envScope}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground">Environment Variables</p>
+                  <Button type="button" size="sm" variant="outline" onClick={addEnvVariable}>
+                    Add Variable
+                  </Button>
+                </div>
+
+                <div className="mb-3 space-y-2 rounded-xl border border-border/70 bg-background/40 p-3">
+                  <p className="text-xs text-muted-foreground">Paste .env content (bulk import supported)</p>
+                  <textarea
+                    value={envBulkInput}
+                    onChange={(event) => setEnvBulkInput(event.target.value)}
+                    placeholder={"API_URL = \"https://api.example.com\"\nJWT_SECRET = \"abc123\""}
+                    className="min-h-24 w-full rounded-lg border border-border/80 bg-background px-3 py-2 text-xs outline-none transition focus:border-primary"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={importEnvVariablesFromPaste}
+                    disabled={envBulkInput.trim().length === 0}
+                  >
+                    Import Pasted Env
+                  </Button>
+                </div>
+
+                {envVariables.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-border/70 bg-background/40 p-3 text-xs text-muted-foreground">
+                    No environment variables added. Values are encrypted before storing and never shown in logs.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {envVariables.map((entry) => (
+                      <div key={entry.id} className="grid gap-2 rounded-xl border border-border/70 bg-background/50 p-2 sm:grid-cols-[1fr_1fr_auto_auto]">
+                        <input
+                          value={entry.key}
+                          onChange={(event) => updateEnvVariable(entry.id, "key", event.target.value)}
+                          placeholder="KEY"
+                          className="h-10 rounded-lg border border-border/80 bg-background px-3 text-xs outline-none transition focus:border-primary"
+                        />
+                        <input
+                          value={entry.value}
+                          onChange={(event) => updateEnvVariable(entry.id, "value", event.target.value)}
+                          placeholder="Value"
+                          type={entry.revealValue ? "text" : "password"}
+                          className="h-10 rounded-lg border border-border/80 bg-background px-3 text-xs outline-none transition focus:border-primary"
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={() => toggleEnvValueVisibility(entry.id)}>
+                          {entry.revealValue ? "Hide" : "View"}
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeEnvVariable(entry.id)}>
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <Button className="w-full" onClick={() => void handleDeploy()} disabled={!canDeploy}>
                 {isDeploying ? (
                   <>
@@ -338,6 +595,10 @@ export default function NewProjectFlowPage({
                   <div className="text-sm text-muted-foreground">
                     <p>Project ID: {projectId ?? "pending"}</p>
                     <p>Repository: {fullName}</p>
+                    <p>Environment: {deployEnvironment}</p>
+                    <p>Runtime: {runtime}</p>
+                    {runtimePort ? <p>Runtime Port: {runtimePort}</p> : null}
+                    {runtimeStatus ? <p>Runtime Status: {runtimeStatus}</p> : null}
                   </div>
 
                   {deploymentUrl ? (

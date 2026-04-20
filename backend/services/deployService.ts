@@ -2,16 +2,62 @@ import { spawn } from "node:child_process";
 import { access, copyFile, cp, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
+import type { DeploymentRuntime } from "@prisma/client";
 import simpleGit from "simple-git";
 
 import { prisma } from "../../lib/prisma";
+import { decryptSecret } from "../../lib/security/encryption";
+import { resolveProjectEnvironmentVariables } from "../../lib/security/projectEnv";
+import { startRuntime, stopRuntimeIfRunning } from "./runtimeManager";
 import type { DeployJobData, DeploymentStatus } from "./deployTypes";
 
 const deploymentsRoot = path.join(process.cwd(), "backend", "deployments");
 
 type PackageJson = {
   scripts?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 };
+
+function detectRuntimeFromPackageJson(packageJson: PackageJson | null): DeploymentRuntime {
+  const scripts = packageJson?.scripts ?? {};
+  const dependencies = {
+    ...(packageJson?.dependencies ?? {}),
+    ...(packageJson?.devDependencies ?? {}),
+  };
+
+  const startScript = scripts.start?.toLowerCase() ?? "";
+  const buildScript = scripts.build?.toLowerCase() ?? "";
+
+  const hasNext = Boolean(dependencies.next) || startScript.includes("next start") || buildScript.includes("next build");
+
+  if (hasNext) {
+    return "nextjs";
+  }
+
+  const backendDeps = [
+    "express",
+    "fastify",
+    "koa",
+    "hono",
+    "@nestjs/core",
+    "socket.io",
+  ];
+
+  const hasBackendDep = backendDeps.some((dep) => Boolean(dependencies[dep]));
+
+  if (hasBackendDep) {
+    return "node";
+  }
+
+  const nodeStartLike = /(\bnode\b|\btsx\b|\bts-node\b|\bnodemon\b|\bpm2\b|\bnest start\b|\bfastify\b|\bexpress\b)/;
+
+  if (startScript && nodeStartLike.test(startScript)) {
+    return "node";
+  }
+
+  return "static";
+}
 
 function timestampLog(message: string) {
   const now = new Date().toISOString();
@@ -38,13 +84,21 @@ async function appendDeploymentLog(projectId: string, message: string) {
   console.log(logLine);
 }
 
-async function setDeploymentStatus(projectId: string, status: DeploymentStatus, extra?: { deploymentUrl?: string; error?: string }) {
+async function setDeploymentStatus(
+  projectId: string,
+  status: DeploymentStatus,
+  extra?: { deploymentUrl?: string; error?: string; runtime?: DeploymentRuntime; runtimePort?: number | null; runtimePid?: number | null; runtimeStatus?: string | null },
+) {
   await prisma.deployment.update({
     where: { projectId },
     data: {
       status,
       deploymentUrl: extra?.deploymentUrl,
       error: extra?.error,
+      runtime: extra?.runtime,
+      runtimePort: extra?.runtimePort,
+      runtimePid: extra?.runtimePid,
+      runtimeStatus: extra?.runtimeStatus,
     },
   });
 }
@@ -67,22 +121,48 @@ function ensureTrustedRepo(repoUrl: string) {
   }
 }
 
-async function runCommand(command: string, args: string[], cwd: string, projectId: string, step: string) {
+function redactLogLine(raw: string, secrets: Record<string, string>) {
+  let next = raw;
+
+  for (const secret of Object.values(secrets)) {
+    if (!secret || secret.length < 4) {
+      continue;
+    }
+
+    next = next.split(secret).join("[REDACTED]");
+  }
+
+  return next;
+}
+
+async function runCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+  projectId: string,
+  step: string,
+  injectedEnv: Record<string, string>,
+) {
   await appendDeploymentLog(projectId, `Running ${step}: ${command} ${args.join(" ")}`);
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
+      env: {
+        ...process.env,
+        ...injectedEnv,
+      },
     });
 
     child.stdout.on("data", (chunk) => {
-      void appendDeploymentLog(projectId, `${step}: ${chunk.toString().trim()}`);
+      const line = redactLogLine(chunk.toString().trim(), injectedEnv);
+      void appendDeploymentLog(projectId, `${step}: ${line}`);
     });
 
     child.stderr.on("data", (chunk) => {
-      void appendDeploymentLog(projectId, `${step} [stderr]: ${chunk.toString().trim()}`);
+      const line = redactLogLine(chunk.toString().trim(), injectedEnv);
+      void appendDeploymentLog(projectId, `${step} [stderr]: ${line}`);
     });
 
     child.on("error", (error) => {
@@ -159,11 +239,11 @@ async function fileExists(filePath: string) {
 }
 
 export async function deployRepository(job: DeployJobData) {
-  const { projectId, repoUrl, stackUserId } = job;
+  const { projectId, repoUrl, stackUserId, environment } = job;
 
   ensureTrustedRepo(repoUrl);
   await setDeploymentStatus(projectId, "building");
-  await appendDeploymentLog(projectId, "Deployment started");
+  await appendDeploymentLog(projectId, `Deployment started for ${environment}`);
 
   const deploymentDir = path.join(deploymentsRoot, projectId);
   const sourceDir = path.join(deploymentDir, "source");
@@ -178,9 +258,42 @@ export async function deployRepository(job: DeployJobData) {
       where: { stackUserId },
       select: {
         githubAccessToken: true,
+        githubAccessTokenIv: true,
+        githubAccessTokenTag: true,
+        githubAccessTokenKeyVer: true,
       },
     });
-    const token = connection?.githubAccessToken;
+
+    let token = connection?.githubAccessToken;
+
+    if (
+      connection?.githubAccessToken &&
+      connection.githubAccessTokenIv &&
+      connection.githubAccessTokenTag &&
+      connection.githubAccessTokenKeyVer
+    ) {
+      try {
+        token = decryptSecret(
+          {
+            value: connection.githubAccessToken,
+            iv: connection.githubAccessTokenIv,
+            tag: connection.githubAccessTokenTag,
+            keyVersion: connection.githubAccessTokenKeyVer,
+          },
+          `github:${stackUserId}`,
+        );
+      } catch {
+        token = null;
+        await appendDeploymentLog(projectId, "Warning: Could not decrypt GitHub token; using unauthenticated clone");
+      }
+    }
+
+    const injectedEnv = await resolveProjectEnvironmentVariables({
+      stackUserId,
+      projectId,
+      environment,
+    });
+
     const cloneUrl = token ? buildAuthenticatedRepoUrl(repoUrl, token) : repoUrl;
 
     await appendDeploymentLog(projectId, `Cloning repository ${repoUrl}`);
@@ -188,10 +301,9 @@ export async function deployRepository(job: DeployJobData) {
 
     const packageJsonPath = path.join(sourceDir, "package.json");
     const hasPackageJson = await fileExists(packageJsonPath);
+    let runtime: DeploymentRuntime = "static";
 
     if (hasPackageJson) {
-      await runCommand("npm", ["install"], sourceDir, projectId, "install");
-
       let packageJson: PackageJson | null = null;
 
       try {
@@ -201,8 +313,25 @@ export async function deployRepository(job: DeployJobData) {
         packageJson = null;
       }
 
+      runtime = detectRuntimeFromPackageJson(packageJson);
+      await setDeploymentStatus(projectId, "building", { runtime });
+      await appendDeploymentLog(projectId, `Detected runtime: ${runtime}`);
+
+      await runCommand("npm", ["install"], sourceDir, projectId, "install", injectedEnv);
+
       if (packageJson?.scripts?.build) {
-        await runCommand("npm", ["run", "build"], sourceDir, projectId, "build");
+        await runCommand("npm", ["run", "build"], sourceDir, projectId, "build", injectedEnv);
+
+        if (runtime === "static") {
+          const hasNextBuildId = await fileExists(path.join(sourceDir, ".next", "BUILD_ID"));
+          const hasNextDir = await fileExists(path.join(sourceDir, ".next"));
+
+          if (hasNextBuildId || hasNextDir) {
+            runtime = "nextjs";
+            await setDeploymentStatus(projectId, "building", { runtime });
+            await appendDeploymentLog(projectId, "Detected Next.js runtime from .next build output");
+          }
+        }
       } else {
         await appendDeploymentLog(projectId, "No build script found, using repository files as deploy output");
       }
@@ -210,29 +339,55 @@ export async function deployRepository(job: DeployJobData) {
       await appendDeploymentLog(projectId, "No package.json found, treating repository as static files");
     }
 
-    const buildOutputDir = await detectBuildOutput(sourceDir);
-    await appendDeploymentLog(projectId, `Detected build output: ${buildOutputDir}`);
+    if (runtime === "static") {
+      const buildOutputDir = await detectBuildOutput(sourceDir);
+      await appendDeploymentLog(projectId, `Detected build output: ${buildOutputDir}`);
 
-    await rm(outputDir, { recursive: true, force: true });
-    await cp(buildOutputDir, outputDir, { recursive: true });
+      await rm(outputDir, { recursive: true, force: true });
+      await cp(buildOutputDir, outputDir, { recursive: true });
 
-    const indexPath = path.join(outputDir, "index.html");
-    const hasIndex = await fileExists(indexPath);
+      const indexPath = path.join(outputDir, "index.html");
+      const hasIndex = await fileExists(indexPath);
 
-    if (!hasIndex) {
-      const htmlFiles = (await readdir(outputDir)).filter((entry) => entry.toLowerCase().endsWith(".html"));
+      if (!hasIndex) {
+        const htmlFiles = (await readdir(outputDir)).filter((entry) => entry.toLowerCase().endsWith(".html"));
 
-      if (htmlFiles.length === 1) {
-        await copyFile(path.join(outputDir, htmlFiles[0]), indexPath);
+        if (htmlFiles.length === 1) {
+          await copyFile(path.join(outputDir, htmlFiles[0]), indexPath);
+        }
       }
+
+      await access(indexPath);
+    } else {
+      await appendDeploymentLog(projectId, "Skipping static artifact checks for backend runtime deployment");
     }
 
-    await access(indexPath);
-
     const appPort = process.env.APP_URL_PORT ?? "3000";
-    const deploymentUrl = `http://localhost:${appPort}/project/${projectId}/`;
+    let deploymentUrl = `http://localhost:${appPort}/project/${projectId}/`;
+    let runtimePort: number | null = null;
+    let runtimePid: number | null = null;
+    let runtimeStatus: string | null = null;
 
-    await setDeploymentStatus(projectId, "success", { deploymentUrl });
+    if (runtime === "nextjs" || runtime === "node") {
+      const startedRuntime = await startRuntime({
+        projectId,
+        sourceDir,
+        runtime,
+        env: injectedEnv,
+      });
+
+      if (startedRuntime) {
+        deploymentUrl = startedRuntime.runtimeUrl;
+        runtimePort = startedRuntime.port;
+        runtimePid = startedRuntime.pid;
+        runtimeStatus = startedRuntime.healthy ? "healthy" : "starting";
+        await appendDeploymentLog(projectId, `Runtime started on port ${startedRuntime.port} (${runtimeStatus})`);
+      }
+    } else {
+      await stopRuntimeIfRunning(projectId);
+    }
+
+    await setDeploymentStatus(projectId, "success", { deploymentUrl, runtimePort, runtimePid, runtimeStatus });
     await appendDeploymentLog(projectId, `Deployment success. URL: ${deploymentUrl}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown deployment error";

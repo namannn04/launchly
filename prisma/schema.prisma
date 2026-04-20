@@ -7,17 +7,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum DeploymentEnvironment {
+  development
+  preview
+  production
+}
+
+enum DeploymentRuntime {
+  static
+  nextjs
+  node
+  unknown
+}
+
 model UserGithubConnection {
   id                String   @id @default(cuid())
-  stackUserId       String   @unique
-  stackUser         StackUser @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
-  githubConnected   Boolean  @default(false)
-  githubAccountId   String?  @unique
-  githubUsername    String?
-  githubAvatar      String?
-  githubAccessToken String?  @db.Text
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  stackUserId             String   @unique
+  stackUser               StackUser @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
+  githubConnected         Boolean  @default(false)
+  githubAccountId         String?  @unique
+  githubUsername          String?
+  githubAvatar            String?
+  githubAccessToken       String?  @db.Text
+  githubAccessTokenIv     String?
+  githubAccessTokenTag    String?
+  githubAccessTokenKeyVer Int?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 }
 
 model StackUser {
@@ -28,20 +44,72 @@ model StackUser {
   profileImageUrl    String?
   githubConnection   UserGithubConnection?
   deployments        Deployment[]
+  projectEnvVars     ProjectEnvironmentVariable[]
+  auditLogs          AuditLog[]
+  sensitiveTokens    SensitiveActionToken[]
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 }
 
 model Deployment {
-  id            String   @id @default(cuid())
-  projectId     String   @unique
+  id            String                @id @default(cuid())
+  projectId     String                @unique
   stackUserId   String
-  stackUser     StackUser @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
+  stackUser     StackUser             @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
   repoUrl       String
   status        String
+  environment   DeploymentEnvironment @default(production)
+  runtime       DeploymentRuntime     @default(unknown)
   deploymentUrl String?
-  logs          String   @default("")
+  runtimePort   Int?
+  runtimePid    Int?
+  runtimeStatus String?
+  logs          String                @default("")
   error         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+}
+
+model ProjectEnvironmentVariable {
+  id         String                @id @default(cuid())
+  projectId  String
+  stackUserId String
+  stackUser  StackUser             @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
+  key        String
+  value      String                @db.Text
+  valueIv    String
+  valueTag   String
+  keyVersion Int
+  environment DeploymentEnvironment
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@index([stackUserId, projectId])
+  @@unique([stackUserId, projectId, environment, key])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  stackUserId String
+  stackUser   StackUser @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
+  action      String
+  resourceType String
+  resourceId  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([stackUserId, createdAt])
+  @@index([resourceType, resourceId])
+}
+
+model SensitiveActionToken {
+  id          String   @id @default(cuid())
+  stackUserId String
+  stackUser   StackUser @relation(fields: [stackUserId], references: [stackUserId], onDelete: Cascade)
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([stackUserId, expiresAt])
 }

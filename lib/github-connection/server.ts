@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { decryptSecret } from "@/lib/security/encryption";
 
 export type GitHubConnectionStatus = {
   githubConnected: boolean;
@@ -53,15 +54,45 @@ export async function syncStackUserIdentity(user: StackUserIdentity) {
 }
 
 export async function getGitHubConnectionByStackUserId(stackUserId: string) {
-  return prisma.userGithubConnection.findUnique({
+  const connection = await prisma.userGithubConnection.findUnique({
     where: { stackUserId },
     select: {
       githubConnected: true,
       githubUsername: true,
       githubAvatar: true,
       githubAccessToken: true,
+      githubAccessTokenIv: true,
+      githubAccessTokenTag: true,
+      githubAccessTokenKeyVer: true,
     },
   });
+
+  if (!connection?.githubAccessToken) {
+    return connection;
+  }
+
+  if (!connection.githubAccessTokenIv || !connection.githubAccessTokenTag || !connection.githubAccessTokenKeyVer) {
+    return connection;
+  }
+
+  return {
+    ...connection,
+    githubAccessToken: (() => {
+      try {
+        return decryptSecret(
+          {
+            value: connection.githubAccessToken,
+            iv: connection.githubAccessTokenIv,
+            tag: connection.githubAccessTokenTag,
+            keyVersion: connection.githubAccessTokenKeyVer,
+          },
+          `github:${stackUserId}`,
+        );
+      } catch {
+        return null;
+      }
+    })(),
+  };
 }
 
 export async function getGitHubConnectionStatus(stackUserId: string): Promise<GitHubConnectionStatus> {

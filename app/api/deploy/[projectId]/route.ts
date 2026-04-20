@@ -3,7 +3,10 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { stopRuntimeIfRunning } from "@/backend/services/runtimeManager";
 import { prisma } from "@/lib/prisma";
+import { writeAuditLog } from "@/lib/security/audit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { stackServerApp } from "@/stack/server";
 
 export async function GET(
@@ -27,6 +30,10 @@ export async function GET(
       projectId: true,
       repoUrl: true,
       status: true,
+      environment: true,
+      runtime: true,
+      runtimePort: true,
+      runtimeStatus: true,
       deploymentUrl: true,
       logs: true,
       error: true,
@@ -51,6 +58,24 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rate = await enforceRateLimit({
+    key: `deploy-delete:${user.id}`,
+    limit: 8,
+    windowSeconds: 60,
+  });
+
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Too many delete requests. Please retry shortly." },
+      {
+        status: 429,
+        headers: {
+          "retry-after": String(rate.retryAfterSeconds),
+        },
+      },
+    );
+  }
+
   const { projectId } = await params;
 
   const deployment = await prisma.deployment.findFirst({
@@ -67,6 +92,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
   }
 
+  await stopRuntimeIfRunning(deployment.projectId);
+
   await prisma.deployment.delete({
     where: {
       projectId: deployment.projectId,
@@ -75,6 +102,13 @@ export async function DELETE(
 
   const deploymentRoot = path.join(process.cwd(), "backend", "deployments", deployment.projectId);
   await rm(deploymentRoot, { recursive: true, force: true });
+
+  await writeAuditLog({
+    stackUserId: user.id,
+    action: "deploy.deleted",
+    resourceType: "deployment",
+    resourceId: deployment.projectId,
+  });
 
   return NextResponse.json({ success: true });
 }

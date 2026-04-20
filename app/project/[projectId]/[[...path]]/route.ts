@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { prisma } from "@/lib/prisma";
+
 const mimeTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
@@ -45,8 +47,19 @@ function injectBaseHref(html: string, projectId: string) {
   return html.replace(/<head([^>]*)>/i, `<head$1><base href="${baseHref}">`);
 }
 
+function rewriteRuntimeHtmlForProject(html: string, projectId: string) {
+  const projectPrefix = `/project/${projectId}`;
+
+  return html
+    .replace(/(["'])\/_next\//g, `$1${projectPrefix}/_next/`)
+    .replace(/(["'])\/favicon\.ico(["'])/g, `$1${projectPrefix}/favicon.ico$2`)
+    .replace(/(["'])\/robots\.txt(["'])/g, `$1${projectPrefix}/robots.txt$2`)
+    .replace(/(["'])\/manifest\.json(["'])/g, `$1${projectPrefix}/manifest.json$2`)
+    .replace(/url\(\/_next\//g, `url(${projectPrefix}/_next/`);
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ projectId: string; path?: string[] }> },
 ) {
   const { projectId, path: pathSegments } = await params;
@@ -62,6 +75,73 @@ export async function GET(
   }
 
   const requestedPath = relativePath ? path.join(outputRoot, relativePath) : path.join(outputRoot, "index.html");
+
+  const deployment = await prisma.deployment.findUnique({
+    where: { projectId },
+    select: {
+      runtime: true,
+      runtimePort: true,
+    },
+  });
+
+  if ((deployment?.runtime === "nextjs" || deployment?.runtime === "node") && deployment.runtimePort) {
+    const runtimeUrl = new URL(`http://127.0.0.1:${deployment.runtimePort}`);
+    runtimeUrl.pathname = relativePath ? `/${relativePath}` : "/";
+    runtimeUrl.search = new URL(request.url).search;
+
+    try {
+      const forwardedHeaders = new Headers();
+      const headerAllowList = [
+        "accept",
+        "accept-language",
+        "cookie",
+        "user-agent",
+        "x-forwarded-for",
+        "x-forwarded-host",
+        "x-forwarded-proto",
+      ];
+
+      for (const headerName of headerAllowList) {
+        const value = request.headers.get(headerName);
+
+        if (value) {
+          forwardedHeaders.set(headerName, value);
+        }
+      }
+
+      const proxied = await fetch(runtimeUrl, {
+        method: "GET",
+        cache: "no-store",
+        headers: forwardedHeaders,
+      });
+
+      const headers = new Headers(proxied.headers);
+      const contentType = proxied.headers.get("content-type") ?? "";
+      headers.delete("content-encoding");
+      headers.delete("content-length");
+      headers.delete("transfer-encoding");
+      headers.set("cache-control", "no-cache");
+
+      if (contentType.includes("text/html")) {
+        const html = await proxied.text();
+        const rewrittenHtml = rewriteRuntimeHtmlForProject(html, projectId);
+
+        headers.set("content-type", "text/html; charset=utf-8");
+
+        return new NextResponse(rewrittenHtml, {
+          status: proxied.status,
+          headers,
+        });
+      }
+
+      return new NextResponse(proxied.body, {
+        status: proxied.status,
+        headers,
+      });
+    } catch {
+      return NextResponse.json({ error: "Backend runtime unavailable" }, { status: 502 });
+    }
+  }
 
   try {
     const fileBuffer = await readFile(requestedPath);
