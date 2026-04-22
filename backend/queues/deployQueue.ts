@@ -26,10 +26,17 @@ function createDeployQueue() {
 
 export async function addDeployJob(data: DeployJobData) {
   const queue = createDeployQueue();
+  const jobKey = `deploy-${data.projectId}`;
 
   try {
-    await queue.add(`deploy:${data.projectId}`, data, {
-      jobId: `deploy:${data.projectId}`,
+    const existing = await queue.getJob(jobKey);
+
+    if (existing) {
+      await existing.remove().catch(() => undefined);
+    }
+
+    await queue.add(jobKey, data, {
+      jobId: jobKey,
     });
   } finally {
     await queue.close();
