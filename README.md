@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Launchly Setup
 
-## Getting Started
+Launchly is a deployment platform with three runtime pieces:
 
-First, run the development server:
+1. the web app
+2. the deploy worker
+3. Redis + PostgreSQL as shared infrastructure
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+### Required environment variables
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copy [`.env.example`](.env.example) to `.env.local` and fill these values:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `DATABASE_URL`
+- `REDIS_URL`
+- `NEXT_PUBLIC_STACK_PROJECT_ID`
+- `NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY`
+- `STACK_SECRET_SERVER_KEY`
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+- `DEPLOY_ENCRYPTION_KEYS` or `DEPLOY_ENCRYPTION_KEY`
+- `DEPLOYMENT_BASE_DOMAIN`
+- `DEPLOYMENT_URL_SCHEME`
+- `APP_URL_PORT`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Local run order
 
-## Learn More
+1. Start PostgreSQL.
+2. Start Redis.
+3. Run Prisma migrations if needed.
+4. Start the web app with `npm run dev`.
+5. Start the worker with `npm run worker:deploy`.
 
-To learn more about Next.js, take a look at the following resources:
+### What to verify first
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Stack Auth sign-in works.
+- GitHub connect redirects back correctly.
+- `/api/github/status` returns authenticated and connected state.
+- A deploy request reaches the queue and the worker starts processing it.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Notes
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `DEPLOYMENT_BASE_DOMAIN=localhost` is fine for local dev.
+- Production subdomain routing needs a real base domain plus wildcard DNS or reverse-proxy support.
+- The worker is separate on purpose; if it is not running, deploy jobs will queue but not finish.
