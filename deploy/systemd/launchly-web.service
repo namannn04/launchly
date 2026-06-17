@@ -1,0 +1,16 @@
+[Unit]
+Description=Launchly Web App
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/launchly
+Environment=NODE_ENV=production
+EnvironmentFile=/home/ubuntu/launchly/.env.local
+ExecStart=/usr/bin/npm run start:prod
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

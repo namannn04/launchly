@@ -6,6 +6,8 @@ import type { DeployJobData } from "../services/deployTypes";
 
 const workerConnection = createRedisConnection();
 
+const workerConcurrency = Number.parseInt(process.env.DEPLOY_WORKER_CONCURRENCY ?? "1", 10);
+
 const deployWorker = new Worker<DeployJobData>(
   "deploy-queue",
   async (job) => {
@@ -13,7 +15,7 @@ const deployWorker = new Worker<DeployJobData>(
   },
   {
     connection: workerConnection,
-    concurrency: 1,
+    concurrency: Number.isFinite(workerConcurrency) && workerConcurrency > 0 ? workerConcurrency : 1,
   },
 );
 

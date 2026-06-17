@@ -1,0 +1,10 @@
+# Replace launchly.example.com with your real domain.
+# Caddy will obtain HTTPS certificates automatically.
+
+launchly.example.com {
+	reverse_proxy 127.0.0.1:3000
+}
+
+*.launchly.example.com {
+	reverse_proxy 127.0.0.1:3000
+}

@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0",
+    "start:prod": "npm run check:env && npm run db:migrate && next start -H 0.0.0.0",
     "lint": "eslint",
     "check:env": "node ./scripts/check-env.mjs",
-    "worker:deploy": "node --env-file=.env.local ./node_modules/tsx/dist/cli.mjs backend/workers/deployWorker.ts",
+    "db:migrate": "prisma migrate deploy",
+    "worker:deploy": "node ./scripts/run-worker.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -18,7 +20,6 @@
     "bullmq": "^5.74.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "express": "^5.2.1",
     "framer-motion": "^12.38.0",
     "ioredis": "^5.10.1",
     "lucide-react": "^1.8.0",

@@ -1,0 +1,23 @@
+services:
+  web:
+    build: .
+    command: npm run start:prod
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      - deployments:/app/backend/deployments
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: npm run worker:deploy
+    env_file:
+      - .env.local
+    volumes:
+      - deployments:/app/backend/deployments
+    restart: unless-stopped
+
+volumes:
+  deployments:
